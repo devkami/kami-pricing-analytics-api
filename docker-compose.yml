@@ -1,0 +1,59 @@
+version: '3.9'
+
+services:
+  kami-pricing-analytics-postgres-db:
+    image: postgres:13
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - proxy
+  
+  kami-pricing-analytics-api:
+    image: devkamico/kami-pricing-analytics:0.6.0
+    container_name: pricing_analytics
+    ports:
+      - "8001:8001"
+    volumes:
+       - ./config:/usr/src/app/config
+       - ./bash_scripts:/usr/src/app/bash_scripts
+    networks:
+      - proxy
+    depends_on:
+      - kami-pricing-analytics-postgres-db
+    environment:
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+    healthcheck:
+      test: ["CMD", "bash", "bash_scripts/healthcheck.sh"]
+      interval: 2m30s
+      timeout: 1m30s
+      retries: 5
+      start_period: 2m
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.middlewares.kami-pricing_analytics-ratelimit.ratelimit.average=60"
+      - "traefik.http.middlewares.kami-pricing_analytics-ratelimit.ratelimit.period=1m"
+      - "traefik.http.middlewares.kami-pricing_analytics-ratelimit.ratelimit.burst=50"      
+      - "traefik.http.routers.kami-pricing_analytics.rule=Host(`pricing.kamico.com.br`)"
+      - "traefik.http.routers.kami-pricing_analytics.entrypoints=websecure"
+      - "traefik.http.routers.kami-pricing_analytics.tls.certresolver=myresolver"
+      - "traefik.http.routers.kami-pricing_analytics-www.rule=Host(`www.pricing.kamico.com.br`)"
+      - "traefik.http.routers.kami-pricing_analytics-www.entrypoints=websecure"
+      - "traefik.http.routers.kami-pricing_analytics-www.tls.certresolver=myresolver"
+      - "traefik.http.routers.kami-pricing_analytics.middlewares=kami-pricing_analytics-ratelimit"
+      
+networks:
+  proxy:
+    external: true
+
+volumes:
+  postgres_data:
